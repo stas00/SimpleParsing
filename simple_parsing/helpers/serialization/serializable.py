@@ -1,4 +1,5 @@
 from __future__ import annotations
+import functools
 
 import json
 import pickle
@@ -831,6 +832,7 @@ def from_dict(
         if name not in obj_dict:
             if (
                 field.metadata.get("to_dict", True)
+                and field.init
                 and field.default is MISSING
                 and field.default_factory is MISSING
             ):
@@ -927,6 +929,7 @@ def is_dataclass_or_optional_dataclass_type(t: type) -> bool:
     return is_dataclass(t) or (is_optional(t) and is_dataclass(get_args(t)[0]))
 
 
+@functools.lru_cache(maxsize=None)
 def _locate(path: str) -> Any:
     """
     COPIED FROM Hydra:
