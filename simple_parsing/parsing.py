@@ -1,4 +1,5 @@
 """Simple, Elegant Argument parsing.
+
 @author: Fabrice Normandin
 """
 from __future__ import annotations
@@ -98,7 +99,6 @@ class ArgumentParser(argparse.ArgumentParser):
 
     - add_config_path_arg : bool, optional
         When set to `True`, adds a `--config_path` argument, of type Path, which is used to parse
-
     """
 
     def __init__(
@@ -531,8 +531,8 @@ class ArgumentParser(argparse.ArgumentParser):
         # Create one argument group per dataclass
         for wrapped_dataclass in wrapped_dataclasses:
             logger.debug(
-                f"Parser {id(self)} is Adding arguments for dataclass: {wrapped_dataclass.dataclass} "
-                f"at destinations {wrapped_dataclass.destinations}"
+                f"Parser {id(self)} is Adding arguments for dataclass: "
+                f"{wrapped_dataclass.dataclass} at destinations {wrapped_dataclass.destinations}"
             )
             wrapped_dataclass.add_arguments(parser=self)
 
@@ -636,7 +636,8 @@ class ArgumentParser(argparse.ArgumentParser):
             # Do rounds of parsing with just the subgroup arguments, until all the subgroups
             # are resolved to a dataclass type.
             logger.debug(
-                f"Starting subgroup parsing round {current_nesting_level}: {list(unresolved_subgroups.keys())}"
+                f"Starting subgroup parsing round {current_nesting_level}: "
+                f"{list(unresolved_subgroups.keys())}"
             )
             # Add all the unresolved subgroups arguments.
             for dest, subgroup_field in unresolved_subgroups.items():
@@ -761,6 +762,7 @@ class ArgumentParser(argparse.ArgumentParser):
 
     def _remove_subgroups_from_namespace(self, parsed_args: argparse.Namespace) -> None:
         """Removes the subgroup choice results from the namespace.
+
         Modifies the namespace in-place.
         """
         # find all subgroup fields
@@ -876,8 +878,9 @@ class ArgumentParser(argparse.ArgumentParser):
                     existing = getattr(parsed_args, destination)
                     if dc_wrapper.dest in self._defaults:
                         logger.debug(
-                            f"Overwriting defaults in the namespace at destination '{destination}' "
-                            f"on the Namespace ({existing}) to a value of {value_for_dataclass_field}"
+                            f"Overwriting defaults in the namespace at destination "
+                            f"'{destination}' on the Namespace ({existing}) to a value of "
+                            f"{value_for_dataclass_field}"
                         )
                         setattr(parsed_args, destination, value_for_dataclass_field)
                     else:
@@ -937,9 +940,28 @@ class ArgumentParser(argparse.ArgumentParser):
         parsed_arg_values = vars(parsed_args)
         deleted_values: dict[str, Any] = {}
 
-        for wrapper in wrappers:
-            for field in wrapper.fields:
-                if argparse.SUPPRESS in wrapper.defaults and field.dest not in parsed_args:
+        # BUG: Need to check that the non-init fields DO have a FieldWrapper here, and that there
+        # isn't a value for that field in the constructor arguments!
+
+        for dc_wrapper in wrappers:
+            for non_init_field in [
+                f for f in dataclasses.fields(dc_wrapper.dataclass) if not f.init
+            ]:
+                field_dest = dc_wrapper.dest + "." + non_init_field.name
+                # We fetch the constructor arguments for the containing dataclass and check that it
+                # doesn't have a value set.
+                dc_constructor_args = constructor_arguments
+                for dest_part in dc_wrapper.dest.split("."):
+                    dc_constructor_args = dc_constructor_args[dest_part]
+                if non_init_field.name in dc_constructor_args:
+                    logger.warning(
+                        f"Field {field_dest} is a field with init=False, but a value is "
+                        f"present in the serialized config. This value will be ignored."
+                    )
+                    dc_constructor_args.pop(non_init_field.name)
+
+            for field in dc_wrapper.fields:
+                if argparse.SUPPRESS in dc_wrapper.defaults and field.dest not in parsed_args:
                     continue
 
                 if field.is_subgroup:
@@ -947,9 +969,8 @@ class ArgumentParser(argparse.ArgumentParser):
                     logger.debug(f"Not calling the subgroup FieldWrapper for dest {field.dest}")
                     continue
 
-                if not field.field.init:
-                    # The field isn't an argument of the dataclass constructor.
-                    continue
+                # We only create FieldWrappers for fields that have init=True.
+                assert field.field.init
 
                 # NOTE: If the field is reused (when using the ConflictResolution.ALWAYS_MERGE
                 # strategy), then we store the multiple values in the `dest` of the first field.
@@ -979,10 +1000,11 @@ class ArgumentParser(argparse.ArgumentParser):
     @property
     def confilct_resolver_max_attempts(self) -> int:
         return self._conflict_resolver.max_attempts
-    
+
     @confilct_resolver_max_attempts.setter
     def confilct_resolver_max_attempts(self, value: int):
         self._conflict_resolver.max_attempts = value
+
 
 # TODO: Change the order of arguments to put `args` as the second argument.
 def parse(
@@ -1068,7 +1090,9 @@ def parse_known_args(
         add_config_path_arg=add_config_path_arg,
     )
     parser.add_arguments(config_class, dest=dest, default=default)
-    parsed_args, unknown_args = parser.parse_known_args(args, attempt_to_reorder=attempt_to_reorder)
+    parsed_args, unknown_args = parser.parse_known_args(
+        args, attempt_to_reorder=attempt_to_reorder
+    )
     config: Dataclass = getattr(parsed_args, dest)
     return config, unknown_args
 
